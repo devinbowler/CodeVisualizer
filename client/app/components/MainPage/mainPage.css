@@ -1,0 +1,52 @@
+body {
+  background-color: #141414;
+  color: white;
+}
+
+.main-container {
+  display: flex;
+  flex-direction: row;
+}
+
+textarea {
+  background-color: transparent;
+  border: none;
+  color: white;
+}
+
+textarea:focus {
+  outline: none;
+}
+
+.left-side {
+  border-right: 1px solid grey;
+  height: 100vh;
+  width: 300px;
+  padding-right: 10px;
+}
+
+.left-side textarea {
+  width: 250px;
+  height: 150px;
+}
+
+.left-side input {
+  width: 100%;
+  border-radius: 8px;
+  padding: 5px;
+  text-decoration: none;
+  border: none;
+  box-shadow: none;
+  margin-top: 15px;
+}
+
+.right-side {
+  height: 100vh;
+  width: 100%;
+  padding-left: 10px;
+}
+
+.right-side textarea {
+  height: 100vh;
+  width: 100%;
+}
