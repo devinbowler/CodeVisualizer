@@ -9,79 +9,74 @@ export class mainPage extends base {
     this.loadCSS("mainPage");
   }
 
-  render() {
-    this.#container = document.createElement("div");
-    this.#container.classList.add("main-container");
-    this.#container.innerHTML = `
-      <div class="left-side">
-        <div class="submit-req">
-          <textarea id="content" placeholder="Enter request here..."></textarea>
-          <input type="button" class="req-send" value="Send"></input>
-        </div>
+render() {
+  this.#container = document.createElement("div");
+  this.#container.classList.add("main-container");
+  this.#container.innerHTML = `
+    <div class="left-side">
+      <div class="submit-req">
+        <textarea id="content" placeholder="Enter request here..."></textarea>
+        <input type="button" class="req-send" value="Visualize This"></input>
       </div>
+    </div>
 
-      <div class="right-side">
-        <textarea id="response" placeholder="Response will be here..." readonly></textarea>
-      </div>
-    `;
+    <div class="right-side">
+      <div id="response" class="response-area"></div>
+    </div>
+  `;
 
-    // Attach event listener for the Send button
-    this.#container.querySelector(".req-send").addEventListener("click", this.#sendRequest.bind(this));
+  // Attach event listener for the Send button
+  this.#container.querySelector(".req-send").addEventListener("click", this.#sendRequest.bind(this));
 
-    return this.#container;
+  return this.#container;
+}
+
+
+async #sendRequest() {
+  const inputContent = document.getElementById("content").value;
+  const responseArea = document.getElementById("response");
+
+  if (!inputContent.trim()) {
+    responseArea.innerHTML = "<p>Please enter a request in the left textarea.</p>";
+    return;
   }
 
-  async #sendRequest() {
-    const inputContent = document.getElementById("content").value;
-    const responseArea = document.getElementById("response");
+  responseArea.innerHTML = "<p>Processing...</p>";
 
-    if (!inputContent.trim()) {
-      responseArea.value = "Please enter a request in the left textarea.";
-      return;
+  try {
+    const response = await fetch("http://localhost:8000/api/generate-response", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userContent: inputContent }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch response from server.");
     }
 
-    responseArea.value = "Processing...";
+    const data = await response.json();
 
-    try {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer YOUR_OPENAI_API_KEY`, // Replace with your actual API key
-        },
-        body: JSON.stringify({
-          model: "gpt-4o",
-          messages: [
-            {
-              role: "system",
-              content: (
-                "You are an AI that only responds with large, detailed ASCII visuals followed by a concise, clear explanation. "
-                + "Do not provide any context, description, or introductory text before the ASCII visual. The ASCII visual must be large, well-structured, "
-                + "and as detailed as possible. Use clear spacing, alignment, and shapes to make the visual precise and intuitive. "
-                + "After the ASCII visual, you must provide a concise explanation (no more than 2 paragraphs) that explains the concept illustrated by the ASCII. "
-                + "The explanation must be clear and informative, and must never come before the visual."
-              ),
-            },
-            {
-              role: "user",
-              content: inputContent,
-            },
-          ],
-          temperature: 0.9,
-          max_tokens: 2000,
-          n: 1,
-        }),
-      });
+    // Extract content between triple backticks
+    const responseText = data.generatedResponse;
+    const codeBlockMatch = responseText.match(/```([\s\S]*?)```/); // Regex to find text between ```
+    const explanation = responseText.replace(/```[\s\S]*?```/, "").trim(); // Remove code block
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch response from OpenAI.");
-      }
-
-      const data = await response.json();
-      responseArea.value = data.choices[0].message.content;
-    } catch (error) {
-      responseArea.value = `Error: ${error.message}`;
+    if (codeBlockMatch) {
+      const codeContent = codeBlockMatch[1]; // Get the content inside ```
+      // Render the code block and explanation
+      responseArea.innerHTML = `
+        <pre><code>${codeContent}</code></pre>
+        <p>${explanation}</p>
+      `;
+    } else {
+      responseArea.innerHTML = `<p>${responseText}</p>`;
     }
+  } catch (error) {
+    responseArea.innerHTML = `<p>Error: ${error.message}</p>`;
   }
+}
+
 }
 

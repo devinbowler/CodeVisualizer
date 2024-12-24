@@ -19,7 +19,6 @@ textarea:focus {
 }
 
 .left-side {
-  border-right: 1px solid grey;
   height: 100vh;
   width: 300px;
   padding-right: 10px;
@@ -28,25 +27,40 @@ textarea:focus {
 .left-side textarea {
   width: 250px;
   height: 150px;
+  resize: none;
 }
 
 .left-side input {
+  background-color: #d4d4d4;
   width: 100%;
   border-radius: 8px;
-  padding: 5px;
+  padding: 10px;
   text-decoration: none;
   border: none;
+  font-weight: bold;
   box-shadow: none;
   margin-top: 15px;
 }
 
 .right-side {
   height: 100vh;
+  padding: 10px;
+  border-radius: 8px;
   width: 100%;
-  padding-left: 10px;
+  background-color: #181818;
 }
 
 .right-side textarea {
   height: 100vh;
   width: 100%;
 }
+
+.response-area {
+  padding: 10px;
+  padding-top: 0px;
+  padding-bottom: 0px;
+  border-radius: 5px;
+  font-family: "Courier New", Courier, monospace;
+  overflow-x: auto; /* Allow horizontal scrolling */
+}
+
