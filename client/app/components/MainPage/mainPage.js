@@ -9,74 +9,124 @@ export class mainPage extends base {
     this.loadCSS("mainPage");
   }
 
-render() {
-  this.#container = document.createElement("div");
-  this.#container.classList.add("main-container");
-  this.#container.innerHTML = `
-    <div class="left-side">
-      <div class="submit-req">
-        <textarea id="content" placeholder="Enter request here..."></textarea>
-        <input type="button" class="req-send" value="Visualize This"></input>
+  render() {
+    this.#container = document.createElement("div");
+    this.#container.classList.add("main-container");
+    this.#container.innerHTML = `
+      <div class="left-side">
+        <div class="submit-req">
+          <textarea id="content" placeholder="Enter Manim code here..."></textarea>
+          <input type="button" class="req-send" value="Visualize This"></input>
+        </div>
       </div>
-    </div>
 
-    <div class="right-side">
-      <div id="response" class="response-area"></div>
-    </div>
-  `;
+      <div class="right-side">
+        <div id="response" class="response-area">
+          <img 
+            src="http://localhost:8000/videos/circle/1080p60/circle.gif"
+            alt="Rendered GIF" 
+            style="max-width: 100%; height: auto; display: block;" />
+          <p>Waiting for input...</p>
+        </div>
+      </div>
+    `;
 
-  // Attach event listener for the Send button
-  this.#container.querySelector(".req-send").addEventListener("click", this.#sendRequest.bind(this));
+    this.#container
+      .querySelector(".req-send")
+      .addEventListener("click", this.#sendRequest.bind(this));
 
-  return this.#container;
-}
-
-
-async #sendRequest() {
-  const inputContent = document.getElementById("content").value;
-  const responseArea = document.getElementById("response");
-
-  if (!inputContent.trim()) {
-    responseArea.innerHTML = "<p>Please enter a request in the left textarea.</p>";
-    return;
+    return this.#container;
   }
 
-  responseArea.innerHTML = "<p>Processing...</p>";
+  async #sendRequest() {
+    const inputContent = document.getElementById("content").value;
+    const responseArea = document.getElementById("response");
 
-  try {
-    const response = await fetch("http://localhost:8000/api/generate-response", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ userContent: inputContent }),
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch response from server.");
+    if (!inputContent.trim()) {
+      responseArea.innerHTML = "<p>Please enter Manim code in the left textarea.</p>";
+      return;
     }
 
-    const data = await response.json();
+    responseArea.innerHTML = "<p>Processing... Please wait for the GIF to render.</p>";
 
-    // Extract content between triple backticks
-    const responseText = data.generatedResponse;
-    const codeBlockMatch = responseText.match(/```([\s\S]*?)```/); // Regex to find text between ```
-    const explanation = responseText.replace(/```[\s\S]*?```/, "").trim(); // Remove code block
+    try {
+      const response = await fetch("http://localhost:8000/api/generate-video", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ manimCode: inputContent }),
+      });
 
-    if (codeBlockMatch) {
-      const codeContent = codeBlockMatch[1]; // Get the content inside ```
-      // Render the code block and explanation
-      responseArea.innerHTML = `
-        <pre><code>${codeContent}</code></pre>
-        <p>${explanation}</p>
-      `;
-    } else {
-      responseArea.innerHTML = `<p>${responseText}</p>`;
+      if (!response.ok) {
+        throw new Error("Failed to fetch response from server.");
+      }
+
+      const data = await response.json();
+
+      if (data.error) {
+        responseArea.innerHTML = `<p>Error: ${data.error}</p>`;
+      } else {
+        const gifUrl = data.videoUrl;
+        console.log(`GIF URL: ${gifUrl}`); 
+        responseArea.innerHTML = `
+          <img 
+            src="${gifUrl}" 
+            alt="Rendered GIF" 
+            style="max-width: 100%; height: auto; display: block;" />
+        `;
+      }
+    } catch (error) {
+      responseArea.innerHTML = `<p>Error: ${error.message}</p>`;
     }
-  } catch (error) {
-    responseArea.innerHTML = `<p>Error: ${error.message}</p>`;
   }
-}
 
+  /*
+  Uncomment this function for ASCII rendering functionality:
+  
+  async #sendAsciiRequest() {
+    const inputContent = document.getElementById("content").value;
+    const responseArea = document.getElementById("response");
+
+    if (!inputContent.trim()) {
+      responseArea.innerHTML = "<p>Please enter a request in the left textarea.</p>";
+      return;
+    }
+
+    responseArea.innerHTML = "<p>Processing...</p>";
+
+    try {
+      const response = await fetch("http://localhost:8000/api/generate-response", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userContent: inputContent }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch response from server.");
+      }
+
+      const data = await response.json();
+
+      const responseText = data.generatedResponse;
+      const codeBlockMatch = responseText.match(/```([\s\S]*?)```/); // Regex to find text between ```
+      const explanation = responseText.replace(/```[\s\S]*?```/, "").trim(); // Remove code block
+
+      if (codeBlockMatch) {
+        const codeContent = codeBlockMatch[1]; // Get the content inside ```
+        responseArea.innerHTML = `
+          <pre><code>${codeContent}</code></pre>
+          <p>${explanation}</p>
+        `;
+      } else {
+        responseArea.innerHTML = `<p>${responseText}</p>`;
+      }
+    } catch (error) {
+      responseArea.innerHTML = `<p>Error: ${error.message}</p>`;
+    }
+  }
+  */
 }
 
