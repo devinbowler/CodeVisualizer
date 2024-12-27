@@ -38,7 +38,7 @@ export class mainPage extends base {
       const responseArea = document.getElementById("response");
 
       if (!inputContent.trim()) {
-          responseArea.innerHTML = "<p>Please enter Manim code in the left textarea.</p>";
+          responseArea.innerHTML = "<p>Please enter what you want visualized in the left textarea.</p>";
           return;
       }
 
@@ -51,7 +51,7 @@ export class mainPage extends base {
               headers: {
                   "Content-Type": "application/json",
               },
-              body: JSON.stringify({ manimCode: inputContent }),
+              body: JSON.stringify({ textInput: inputContent }),
           });
 
           if (!response.ok) {
@@ -66,80 +66,43 @@ export class mainPage extends base {
               const gifUrl = data.videoUrl; // Get GIF URL from response
               console.log(`GIF URL: ${gifUrl}`);
 
-              // Trigger a delayed GET request
-              setTimeout(async () => {
-                  try {
-                      const gifResponse = await fetch(gifUrl, { method: "GET" });
-
-                      if (!gifResponse.ok) {
-                          throw new Error("Failed to fetch the generated GIF.");
-                      }
-
-                      // Render the GIF after a successful GET
+              // Poll for the GIF until it's available
+              try {
+                  const gifAvailable = await this.#pollForGIF(gifUrl);
+                  if (gifAvailable) {
                       responseArea.innerHTML = `
                           <img 
                               src="${gifUrl}" 
                               alt="Rendered GIF" 
-                              style="max-width: 100%; height: auto; display: block;" />
+                              style="max-width: 80%; display: block;" />
                       `;
-                  } catch (error) {
-                      responseArea.innerHTML = `<p>Error: ${error.message}</p>`;
                   }
-              }, 10000); // Wait for 500ms before sending GET
+              } catch (error) {
+                  responseArea.innerHTML = `<p>Error: ${error.message}</p>`;
+              }
           }
       } catch (error) {
           responseArea.innerHTML = `<p>Error: ${error.message}</p>`;
       }
   }
 
-
-
-  /*
-  Uncomment this function for ASCII rendering functionality:
-  
-  async #sendAsciiRequest() {
-    const inputContent = document.getElementById("content").value;
-    const responseArea = document.getElementById("response");
-
-    if (!inputContent.trim()) {
-      responseArea.innerHTML = "<p>Please enter a request in the left textarea.</p>";
-      return;
-    }
-
-    responseArea.innerHTML = "<p>Processing...</p>";
-
-    try {
-      const response = await fetch("http://localhost:8000/api/generate-response", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ userContent: inputContent }),
+  #pollForGIF(gifUrl, retries = 10, delay = 2000) {
+      return new Promise(async (resolve, reject) => {
+          for (let i = 0; i < retries; i++) {
+              try {
+                  const gifResponse = await fetch(gifUrl, { method: "GET" });
+                  if (gifResponse.ok) {
+                      resolve(true); // GIF is ready
+                      return;
+                  }
+              } catch (err) {
+                  console.error(`Retrying... (${i + 1}/${retries})`);
+              }
+              await new Promise((resolve) => setTimeout(resolve, delay)); // Wait before retrying
+          }
+          reject(new Error("Failed to fetch the generated GIF after multiple retries."));
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch response from server.");
-      }
-
-      const data = await response.json();
-
-      const responseText = data.generatedResponse;
-      const codeBlockMatch = responseText.match(/```([\s\S]*?)```/); // Regex to find text between ```
-      const explanation = responseText.replace(/```[\s\S]*?```/, "").trim(); // Remove code block
-
-      if (codeBlockMatch) {
-        const codeContent = codeBlockMatch[1]; // Get the content inside ```
-        responseArea.innerHTML = `
-          <pre><code>${codeContent}</code></pre>
-          <p>${explanation}</p>
-        `;
-      } else {
-        responseArea.innerHTML = `<p>${responseText}</p>`;
-      }
-    } catch (error) {
-      responseArea.innerHTML = `<p>Error: ${error.message}</p>`;
-    }
   }
-  */
+
 }
 

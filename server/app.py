@@ -2,10 +2,14 @@ import os
 import json
 import subprocess
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import re
 import traceback
 import uuid
-import re
+from openai import OpenAI
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+client = OpenAI()
+api_key = os.getenv("OPENAI_API_KEY")
 
 # Paths for scripts and rendered files
 WORKING_DIR = r"C:\Users\devin\OneDrive\Desktop\code\CodeVisualizer\server"
@@ -31,16 +35,94 @@ class RequestHandler(BaseHTTPRequestHandler):
 
                 print("Request data received:", data)
 
-                manim_code = data.get("manimCode", "")
-                if not manim_code:
+                user_prompt = data.get("textInput", "")
+                if not user_prompt:
                     self.send_response(400)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
-                    self.wfile.write(json.dumps({"error": "Manim code is required"}).encode())
+                    self.wfile.write(json.dumps({"error": "A prompt is required"}).encode())
                     return
 
-                print("Manim code received:", manim_code)
+                print("User prompt received:", user_prompt)
+
+                # Step 1: Generate Manim code using GPT-4
+                try:
+                    system_prompt = """
+                    You are an AI designed to generate only Manim Python code. 
+                    Your response must:
+                    1. Follow Manim documentation guidelines.
+                    2. Address the user's prompt accurately and concisely.
+                    3. Contain only Python code with no explanations, comments, or additional text.
+                    4. Avoid deprecated methods such as passing Mobject methods directly to Scene.play. Use the `.animate` syntax instead.
+
+                    For example, when prompted to "generate Manim code to show a linked list of 5 nodes, and we are searching for the value 10 which is in the 4th node," the response should be:
+
+                    from manim import *
+
+                    class LinkedListSearch(Scene):
+                        def construct(self):
+                            # Create linked list nodes as rectangles with labels
+                            node_values = [3, 7, 2, 10, 5]
+                            nodes = []
+                            arrows = []
+
+                            for i, value in enumerate(node_values):
+                                node = Rectangle(width=1.5, height=1, color=WHITE).move_to(3 * LEFT + i * 2 * RIGHT)
+                                label = Text(str(value)).move_to(node.get_center())
+                                self.add(node, label)
+                                nodes.append((node, label))
+
+                                if i > 0:
+                                    arrow = Arrow(start=nodes[i-1][0].get_right(), end=node.get_left(), buff=0.1, color=WHITE)
+                                    self.add(arrow)
+                                    arrows.append(arrow)
+
+                            # Highlight search process
+                            for i, (node, label) in enumerate(nodes):
+                                self.play(node.animate.set_fill(RED, opacity=0.5), run_time=0.5)
+                                if int(label.text) == 10:
+                                    self.play(node.animate.set_fill(GREEN, opacity=0.5), run_time=0.5)
+                                    self.wait(1)
+                                    break
+                                else:
+                                    self.play(node.animate.set_fill(BLACK, opacity=0.5), run_time=0.5)
+
+                            # End scene
+                            self.wait(1)
+                    """
+
+
+                    response = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=0.7,
+                        top_p=1.0,
+                        frequency_penalty=0.0,
+                        presence_penalty=0.0,
+                        max_tokens=1000,  # Adjust based on response length
+                    )
+                    manim_code = response.choices[0].message.content.strip()
+
+                    # Remove Markdown code block markers if present
+                    if manim_code.startswith("```python"):
+                        manim_code = manim_code[len("```python"):].strip()
+                    if manim_code.endswith("```"):
+                        manim_code = manim_code[:-len("```")].strip()
+
+                except Exception as e:
+                    print(f"Error generating Manim code: {e}")
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Failed to generate Manim code"}).encode())
+                    return
+
+                print("Generated Manim code:", manim_code)
 
                 # Extract the class name dynamically
                 class_match = re.search(r"class\s+(\w+)\s*\(.*Scene\):", manim_code)
@@ -57,13 +139,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                 print(f"Extracted class name: {class_name}")
 
                 # Write Manim code to a file
-                script_path = os.path.join(WORKING_DIR, "code.py")
+                script_path = os.path.join(WORKING_DIR, "generated_scene.py")
                 with open(script_path, "w") as script_file:
                     script_file.write(manim_code)
 
                 # Generate a unique filename for the output GIF
                 unique_id = uuid.uuid4().hex
-                gif_filename = f"circle_{unique_id}.gif"
+                gif_filename = f"scene_{unique_id}.gif"
                 gif_path = os.path.join(MEDIA_DIR, gif_filename)
 
                 # Run the Manim command to render the GIF
@@ -72,7 +154,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     "-qh",
                     "-t",
                     "--format=gif",
-                    "--output_file", 
+                    "--output_file",
                     gif_path,
                     script_path,
                     class_name,
@@ -88,8 +170,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     raise Exception(result.stderr)
 
                 # Wait for the file to be fully rendered
-                # TO-DO: Change this based on code length
-                timeout = 5
+                timeout = 10
                 start_time = time.time()
                 while not os.path.exists(gif_path) or os.path.getsize(gif_path) == 0:
                     if time.time() - start_time > timeout:
@@ -115,17 +196,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
 
-
     def do_GET(self):
         if self.path.startswith("/videos/"):
-            # Remove the '/videos/' prefix to get the relative path
             relative_path = self.path[len("/videos/"):]
-
-            # Construct the full file path relative to MEDIA_DIR
             file_path = os.path.join(WORKING_DIR, "media", "videos", relative_path)
 
             print(f"Attempting to serve file: {file_path}")
-            print(f"Both paths: {MEDIA_DIR, relative_path}")
 
             if os.path.exists(file_path):
                 try:
@@ -157,126 +233,3 @@ def run(server_class=HTTPServer, handler_class=RequestHandler, port=8000):
 if __name__ == "__main__":
     run()
 
-
-
-
-
-# Use this code for ASCII version.
-
-'''
-import os
-import json
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from openai import OpenAI
-
-client = OpenAI()
-api_key = os.getenv("OPENAI_API_KEY")
-
-class RequestHandler(BaseHTTPRequestHandler):
-    def do_OPTIONS(self):
-        # Handle CORS preflight requests
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")  # Allow all origins
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
-
-    def do_POST(self):
-        if self.path == "/api/generate-response":
-            # Read and parse the incoming JSON data
-            content_length = int(self.headers["Content-Length"])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data)
-
-            user_content = data.get("userContent", "")
-            if not user_content:
-                self.send_response(400)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")  # Allow all origins
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": "User content is required"}).encode())
-                return
-
-            try:
-                # Step 1: Use a cheaper model to format the input
-                format_content = (
-                        "Reformat the user input for a 4o API call to ensure clear and structured generation of ASCII visuals. "
-                        "Make the request specific, concise, and formatted for clarity. The formatted prompt should request: "
-                        "1. A clear explanation of the concept. "
-                        "2. A detailed ASCII visual illustrating the concept, enclosed in triple backticks (` ``` `). "
-                        "3. A concise explanation following the visual. "
-                    "Do not generate an ASCII visual or explanation yourself. Simply reformat the input for optimal generation."
-                )
-
-
-                # Call the cheaper model (gpt-4o-mini)
-                format_completion = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": format_content},
-                        {"role": "user", "content": user_content},
-                    ],
-                    temperature=0.5,  # Lower temperature for deterministic output
-                    max_tokens=500,  # Limit token usage
-                    n=1
-                )
-
-                # Extract the formatted content
-                formatted_message = format_completion.choices[0].message.content
-
-                print("Formatted Input:", formatted_message)
-
-                # Step 2: Use the advanced model to generate the ASCII visual
-                system_content = (
-                    "You are an AI designed to produce very large, highly detailed ASCII visuals for any concept. "
-                    "Your responses must strictly follow this format: "
-                    "1. Begin your response with an ASCII visual enclosed in triple backticks (` ``` `). "
-                    "The ASCII visual must be large, span multiple lines, and be highly detailed with proper alignment, spacing, and indentation. "
-                    "Ensure the visual uses only ASCII characters and does not include any explanation, description, or text inside or outside the code block. "
-                    "2. After the visual (outside the code block), provide a concise explanation of the concept depicted in the ASCII (maximum 500 characters). "
-                    "This explanation must follow immediately after the closing triple backticks and should clearly and succinctly describe the visual. "
-                    "Do not include any description, context, or explanation before the code block or within it. The explanation must always be outside the code block. "
-                    "Do not include anything except what is explicitly instructed above, even if the user requests otherwise."
-                )
-
-                # Call the advanced model (gpt-4o)
-                final_completion = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": system_content},
-                        {"role": "user", "content": formatted_message},
-                    ],
-                    temperature=0.7,
-                    max_tokens=2000,
-                    n=1
-                )
-
-                response_content = final_completion.choices[0].message.content
-
-                print("Final Response:", response_content)
-
-                # Send success response
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")  # Allow all origins
-                self.end_headers()
-                self.wfile.write(json.dumps({"generatedResponse": response_content}).encode())
-            except Exception as e:
-                # Send error response
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")  # Allow all origins
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode())
-
-
-
-def run(server_class=HTTPServer, handler_class=RequestHandler, port=8000):
-    server_address = ("", port)
-    httpd = server_class(server_address, handler_class)
-    print(f"Server running on http://localhost:{port}")
-    httpd.serve_forever()
-
-if __name__ == "__main__":
-    run()
-'''
