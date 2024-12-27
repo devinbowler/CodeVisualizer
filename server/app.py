@@ -4,6 +4,8 @@ import subprocess
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import traceback
+import uuid
+import re
 
 # Paths for scripts and rendered files
 WORKING_DIR = r"C:\Users\devin\OneDrive\Desktop\code\CodeVisualizer\server"
@@ -23,17 +25,14 @@ class RequestHandler(BaseHTTPRequestHandler):
         print("POST request received.")
         if self.path == "/api/generate-video":
             try:
-                # Parse the incoming JSON data
                 content_length = int(self.headers["Content-Length"])
                 post_data = self.rfile.read(content_length)
                 data = json.loads(post_data)
 
                 print("Request data received:", data)
 
-                # Get Manim code from the request
                 manim_code = data.get("manimCode", "")
                 if not manim_code:
-                    print("No Manim code provided.")
                     self.send_response(400)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Access-Control-Allow-Origin", "*")
@@ -43,52 +42,70 @@ class RequestHandler(BaseHTTPRequestHandler):
 
                 print("Manim code received:", manim_code)
 
+                # Extract the class name dynamically
+                class_match = re.search(r"class\s+(\w+)\s*\(.*Scene\):", manim_code)
+                if not class_match:
+                    print("No valid class found in the Manim code.")
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "No valid Scene class found in the code"}).encode())
+                    return
+
+                class_name = class_match.group(1)
+                print(f"Extracted class name: {class_name}")
+
                 # Write Manim code to a file
-                script_path = os.path.join(WORKING_DIR, "circle.py")
+                script_path = os.path.join(WORKING_DIR, "code.py")
                 with open(script_path, "w") as script_file:
                     script_file.write(manim_code)
 
-                print("Manim script written to:", script_path)
-
-                # Define the output GIF path
-                gif_filename = "circle.gif"
+                # Generate a unique filename for the output GIF
+                unique_id = uuid.uuid4().hex
+                gif_filename = f"circle_{unique_id}.gif"
                 gif_path = os.path.join(MEDIA_DIR, gif_filename)
 
                 # Run the Manim command to render the GIF
                 command = [
                     "manim",
-                    "-qh",  # High-quality rendering
-                    "-t",  # Transparent background
-                    "--format=gif",  # Output as GIF
+                    "-qh",
+                    "-t",
+                    "--format=gif",
+                    "--output_file", 
+                    gif_path,
                     script_path,
-                    "CreateCircle"
+                    class_name,
                 ]
                 print("Running Manim command:", " ".join(command))
 
                 result = subprocess.run(command, cwd=WORKING_DIR, capture_output=True, text=True)
 
+                print(f"Manim stdout: {result.stdout}")
+                print(f"Manim stderr: {result.stderr}")
+
                 if result.returncode != 0:
-                    print(f"Manim error: {result.stderr}")
                     raise Exception(result.stderr)
 
-                print("Manim command executed successfully.")
-
-                # Check for the output file
-                timeout = 15  # Max wait time in seconds
+                # Wait for the file to be fully rendered
+                # TO-DO: Change this based on code length
+                timeout = 5
                 start_time = time.time()
                 while not os.path.exists(gif_path) or os.path.getsize(gif_path) == 0:
                     if time.time() - start_time > timeout:
-                        raise TimeoutError("Rendering timed out.")
+                        raise TimeoutError(f"Rendering timed out. File: {gif_path}")
                     time.sleep(1)
 
-                print("GIF generated at:", gif_path)
+                print(f"GIF successfully rendered: {gif_path}")
 
-                # Send success response with GIF URL
+                # Send the response back with the generated GIF URL
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
-                self.wfile.write(json.dumps({"videoUrl": f"http://localhost:8000/videos/{gif_filename}"}).encode())
+                self.wfile.write(json.dumps({
+                    "videoUrl": f"http://localhost:8000/videos/circle/1080p60/{gif_filename}"
+                }).encode())
 
             except Exception as e:
                 print("Error Traceback:", traceback.format_exc())
@@ -100,23 +117,34 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 
     def do_GET(self):
-        # Serve GIF files dynamically
         if self.path.startswith("/videos/"):
-            video_name = self.path.split("/")[-1]
-            video_path = os.path.join(MEDIA_DIR, video_name)
+            # Remove the '/videos/' prefix to get the relative path
+            relative_path = self.path[len("/videos/"):]
 
-            if os.path.exists(video_path):
-                self.send_response(200)
-                self.send_header("Content-Type", "image/gif")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                with open(video_path, "rb") as video_file:
-                    self.wfile.write(video_file.read())
+            # Construct the full file path relative to MEDIA_DIR
+            file_path = os.path.join(WORKING_DIR, "media", "videos", relative_path)
+
+            print(f"Attempting to serve file: {file_path}")
+            print(f"Both paths: {MEDIA_DIR, relative_path}")
+
+            if os.path.exists(file_path):
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/gif")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    with open(file_path, "rb") as file:
+                        self.wfile.write(file.read())
+                except Exception as e:
+                    print(f"Error serving file: {str(e)}")
+                    self.send_response(500)
+                    self.end_headers()
             else:
+                print(f"File not found: {file_path}")
                 self.send_response(404)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"error": "GIF not found"}).encode())
+                self.wfile.write(json.dumps({"error": "File not found"}).encode())
 
 
 def run(server_class=HTTPServer, handler_class=RequestHandler, port=8000):
@@ -128,6 +156,7 @@ def run(server_class=HTTPServer, handler_class=RequestHandler, port=8000):
 
 if __name__ == "__main__":
     run()
+
 
 
 
