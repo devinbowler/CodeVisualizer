@@ -1,5 +1,4 @@
 import { base } from "../../main/base.js";
-import { viewManager } from "../../main/viewManager.js";
 
 export class mainPage extends base {
   #container = null;
@@ -22,10 +21,6 @@ export class mainPage extends base {
 
       <div class="right-side">
         <div id="response" class="response-area">
-          <img 
-            src="http://localhost:8000/videos/circle/1080p60/circle.gif"
-            alt="Rendered GIF" 
-            style="max-width: 100%; height: auto; display: block;" />
           <p>Waiting for input...</p>
         </div>
       </div>
@@ -39,47 +34,65 @@ export class mainPage extends base {
   }
 
   async #sendRequest() {
-    const inputContent = document.getElementById("content").value;
-    const responseArea = document.getElementById("response");
+      const inputContent = document.getElementById("content").value;
+      const responseArea = document.getElementById("response");
 
-    if (!inputContent.trim()) {
-      responseArea.innerHTML = "<p>Please enter Manim code in the left textarea.</p>";
-      return;
-    }
-
-    responseArea.innerHTML = "<p>Processing... Please wait for the GIF to render.</p>";
-
-    try {
-      const response = await fetch("http://localhost:8000/api/generate-video", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ manimCode: inputContent }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch response from server.");
+      if (!inputContent.trim()) {
+          responseArea.innerHTML = "<p>Please enter Manim code in the left textarea.</p>";
+          return;
       }
 
-      const data = await response.json();
+      responseArea.innerHTML = "<p>Processing... Please wait for the GIF to render.</p>";
 
-      if (data.error) {
-        responseArea.innerHTML = `<p>Error: ${data.error}</p>`;
-      } else {
-        const gifUrl = data.videoUrl;
-        console.log(`GIF URL: ${gifUrl}`); 
-        responseArea.innerHTML = `
-          <img 
-            src="${gifUrl}" 
-            alt="Rendered GIF" 
-            style="max-width: 100%; height: auto; display: block;" />
-        `;
+      try {
+          // Send the POST request
+          const response = await fetch("http://localhost:8000/api/generate-video", {
+              method: "POST",
+              headers: {
+                  "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ manimCode: inputContent }),
+          });
+
+          if (!response.ok) {
+              throw new Error("Failed to fetch response from server.");
+          }
+
+          const data = await response.json();
+
+          if (data.error) {
+              responseArea.innerHTML = `<p>Error: ${data.error}</p>`;
+          } else {
+              const gifUrl = data.videoUrl; // Get GIF URL from response
+              console.log(`GIF URL: ${gifUrl}`);
+
+              // Trigger a delayed GET request
+              setTimeout(async () => {
+                  try {
+                      const gifResponse = await fetch(gifUrl, { method: "GET" });
+
+                      if (!gifResponse.ok) {
+                          throw new Error("Failed to fetch the generated GIF.");
+                      }
+
+                      // Render the GIF after a successful GET
+                      responseArea.innerHTML = `
+                          <img 
+                              src="${gifUrl}" 
+                              alt="Rendered GIF" 
+                              style="max-width: 100%; height: auto; display: block;" />
+                      `;
+                  } catch (error) {
+                      responseArea.innerHTML = `<p>Error: ${error.message}</p>`;
+                  }
+              }, 10000); // Wait for 500ms before sending GET
+          }
+      } catch (error) {
+          responseArea.innerHTML = `<p>Error: ${error.message}</p>`;
       }
-    } catch (error) {
-      responseArea.innerHTML = `<p>Error: ${error.message}</p>`;
-    }
   }
+
+
 
   /*
   Uncomment this function for ASCII rendering functionality:
