@@ -13,7 +13,7 @@ export class base {
       
       const link = document.createElement('link');
       link.rel = 'stylesheet';
-      link.href = `app/components/${fileName}/${fileName}.css`; // Assumes the file path
+      link.href = `service/login/${fileName}.css`; // Assumes the file path
       document.head.appendChild(link);
       this.cssLoaded = true;
    }
