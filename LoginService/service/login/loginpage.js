@@ -12,7 +12,7 @@ export class loginPage extends base {
 
   async #loginUser(username, password) {
     try {
-      const response = await fetch("http://localhost:3000/loginUser", {
+      const response = await fetch("https://loginservice-backend.onrender.com/loginUser", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -35,7 +35,7 @@ export class loginPage extends base {
 
   async #registerUser(username, password) {
     try {
-      const response = await fetch("http://localhost:3000/registerUser", {
+      const response = await fetch("https://loginservice-backend.onrender.com/registerUser", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
